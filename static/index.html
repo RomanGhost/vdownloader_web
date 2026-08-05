@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>vdownloader</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main>
+    <h1>vdownloader</h1>
+
+    <form id="url-form">
+      <input id="url-input" type="text" placeholder="Paste a video URL…" autocomplete="off" required>
+      <button type="submit">Get formats</button>
+    </form>
+
+    <p id="status" class="status" hidden></p>
+
+    <div id="title" class="title" hidden></div>
+    <ul id="formats" class="formats" hidden></ul>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>
