@@ -18,14 +18,24 @@ type Config struct {
 	// HTTPAddr is the address this service listens on.
 	// Env: HTTP_ADDR  Default: :8082
 	HTTPAddr string
+
+	// KafkaBrokers is a comma-separated list of Kafka broker addresses.
+	// Env: KAFKA_BROKERS  Default: localhost:9092
+	KafkaBrokers string
+
+	// KafkaJobsTopic is the topic download job requests are published to.
+	// Env: KAFKA_JOBS_TOPIC  Default: video.jobs
+	KafkaJobsTopic string
 }
 
 // Load reads .env (if present) and returns the populated Config.
 func Load() Config {
 	_ = godotenv.Load()
 	return Config{
-		WorkerURL: getenv("WORKER_URL", "http://localhost:8080"),
-		HTTPAddr:  getenv("HTTP_ADDR", ":8082"),
+		WorkerURL:      getenv("WORKER_URL", "http://localhost:8080"),
+		HTTPAddr:       getenv("HTTP_ADDR", ":8082"),
+		KafkaBrokers:   getenv("KAFKA_BROKERS", "localhost:9092"),
+		KafkaJobsTopic: getenv("KAFKA_JOBS_TOPIC", "video.jobs"),
 	}
 }
 

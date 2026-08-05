@@ -8,6 +8,8 @@ const formatsEl = document.getElementById("formats");
 
 let currentURL = "";
 let currentTitle = "";
+let videoHeights = [];
+let audioFormats = [];
 let pollTimer = null;
 
 function setStatus(text, isError) {
@@ -25,60 +27,59 @@ function stopPolling() {
 
 // ── format helpers (mirrors vdownloader_telegram/internal/bot/presets.go) ──
 
-function isAudioOnly(f) {
-  return f.have_audio && !f.have_video;
+function heightLabel(height) {
+  return height === 2160 ? "4K (2160p)" : height + "p";
 }
 
-function isVideoOnly(f) {
-  return f.have_video && !f.have_audio;
-}
+// ── step rendering ──────────────────────────────────────────────────────────
 
-function qualityLabel(f) {
-  return f.format_note || f.resolution || f.format_id;
-}
-
-function formatLabel(f) {
-  const parts = [f.format_note || f.resolution || "audio"];
-  if (f.ext) parts.push(f.ext);
-  if (f.filesize > 0) {
-    parts.push((f.filesize / (1024 * 1024)).toFixed(1) + " MiB");
-  } else if (f.tbr > 0) {
-    parts.push(Math.round(f.tbr) + " kbps");
-  }
-  return parts.join(" • ");
-}
-
-function formatToJobRequest(url, title, f) {
-  const req = {
-    url,
-    title,
-    quality_label: qualityLabel(f),
-    audio_only: isAudioOnly(f),
-  };
-  if (isVideoOnly(f)) {
-    req.format_arg = f.format_id + "+bestaudio";
-    req.output_format = "mp4";
-  } else {
-    req.format_arg = f.format_id;
-  }
-  return req;
-}
-
-// ── UI ───────────────────────────────────────────────────────────────────
-
-function renderFormats(formats) {
+function renderButtons(items) {
   formatsEl.innerHTML = "";
-  formats.forEach((f) => {
+  items.forEach(({ label, onClick }) => {
     const li = document.createElement("li");
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.textContent = formatLabel(f);
-    btn.addEventListener("click", () => startDownload(f));
+    btn.textContent = label;
+    btn.addEventListener("click", onClick);
     li.appendChild(btn);
     formatsEl.appendChild(li);
   });
-  formatsEl.hidden = formats.length === 0;
+  formatsEl.hidden = items.length === 0;
 }
+
+// Step 1: pick a video quality tier, or go to the audio-only branch.
+function renderQualityStep() {
+  setStatus("Select a quality:", false);
+  const items = videoHeights.map((h) => ({
+    label: heightLabel(h),
+    onClick: () => renderVideoAudioStep(h),
+  }));
+  items.push({ label: "🎵 Audio only", onClick: renderAudioFormatStep });
+  renderButtons(items);
+}
+
+// Step 2 (video branch): with or without an audio track.
+function renderVideoAudioStep(height) {
+  setStatus(`${heightLabel(height)} — with or without audio?`, false);
+  renderButtons([
+    { label: "🔊 With audio", onClick: () => startDownload({ kind: "video", height, withAudio: true }) },
+    { label: "🔇 Without audio", onClick: () => startDownload({ kind: "video", height, withAudio: false }) },
+    { label: "← Back", onClick: renderQualityStep },
+  ]);
+}
+
+// Step 2 (audio branch): target codec, mp3 first as the default.
+function renderAudioFormatStep() {
+  setStatus("Select an audio format:", false);
+  const items = audioFormats.map((f, i) => ({
+    label: f.toUpperCase() + (i === 0 ? " (default)" : ""),
+    onClick: () => startDownload({ kind: "audio", audioFormat: f }),
+  }));
+  items.push({ label: "← Back", onClick: renderQualityStep });
+  renderButtons(items);
+}
+
+// ── form submit / download ──────────────────────────────────────────────────
 
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -114,18 +115,26 @@ form.addEventListener("submit", async (e) => {
   }
 
   currentTitle = data.title || url;
+  videoHeights = data.video_heights || [];
+  audioFormats = data.audio_formats || [];
+
   titleEl.textContent = currentTitle;
   titleEl.hidden = false;
 
-  setStatus("Select a format:", false);
-  renderFormats(data.formats || []);
+  renderQualityStep();
 });
 
-async function startDownload(format) {
+async function startDownload({ kind, height, withAudio, audioFormat }) {
   formatsEl.hidden = true;
   setStatus("Queuing download…", false);
 
-  const body = formatToJobRequest(currentURL, currentTitle, format);
+  const body = { url: currentURL, title: currentTitle, kind };
+  if (kind === "video") {
+    body.height = height;
+    body.with_audio = withAudio;
+  } else {
+    body.audio_format = audioFormat;
+  }
 
   let resp;
   try {
@@ -152,15 +161,15 @@ async function startDownload(format) {
     return;
   }
 
-  setStatus(`Downloading (job #${data.job_id})…`, false);
-  pollJob(data.job_id);
+  setStatus("Downloading…", false);
+  pollJob(data.file_id);
 }
 
-function pollJob(jobID) {
+function pollJob(fileID) {
   const poll = async () => {
     let resp;
     try {
-      resp = await fetch("/api/jobs/" + jobID);
+      resp = await fetch("/api/jobs/" + fileID);
     } catch (err) {
       setStatus("Network error: " + err.message, true);
       pollTimer = setTimeout(poll, 2000);
