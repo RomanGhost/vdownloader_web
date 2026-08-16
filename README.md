@@ -61,21 +61,36 @@ See the repo root [docker-compose.yml](../docker-compose.yml) to run it alongsid
 Must stay in sync with the worker's contract, documented in [vdownloader_worker/README.md#kafka-contract](../vdownloader_worker/README.md#kafka-contract). `POST /api/jobs` body:
 
 ```json
-{"url": "https://...", "title": "optional", "kind": "video", "height": 1080, "with_audio": true}
+{"url": "https://...", "title": "optional", "duration": 635, "kind": "video", "height": 1080, "with_audio": true}
 {"url": "https://...", "kind": "audio", "audio_format": "opus"}
 ```
-`kind` must be `"video"` or `"audio"`; `height` is required (and must be > 0) when `kind == "video"`. `file_id` is generated server-side and ignored if the client sends one.
+`kind` must be `"video"` or `"audio"`; `height` is required (and must be > 0) when `kind == "video"`. `file_id` is generated server-side and ignored if the client sends one. `duration` is optional — [static/app.js](static/app.js) captures it from the `GET /api/formats` response (`currentDuration`) and echoes it back so the worker can size its download timeout without a second lookup.
 
 ## Project structure
 
 ```
 .
 ├── main.go                        # Reverse proxy + POST /api/jobs → Kafka bridge
+├── main_test.go
 ├── internal/
 │   └── config/
-│       └── config.go              # Env var loading
+│       ├── config.go              # Env var loading
+│       └── config_test.go
 └── static/                        # Embedded via go:embed
     ├── index.html
     ├── style.css
     └── app.js                     # Two-step quality/audio picker, job polling
 ```
+
+## Testing
+
+```bash
+go test ./...
+```
+
+No live worker or Kafka broker needed: `handleCreateJob` takes a `jobPublisher` interface (satisfied by `*kafka.Writer` in `main()`, and by an in-memory fake in tests) specifically so its validation and response logic can be tested without a real broker.
+
+- `internal/config/config_test.go` — env var defaults/overrides.
+- `main_test.go` — `handleCreateJob`: valid video/audio requests publish the right JSON and return `{"file_id": ...}`; a client-supplied `file_id` is ignored in favor of a server-generated one; missing `url` / invalid `kind` / `kind == "video"` without `height` all return `400` without publishing anything; a publish failure returns `500`; non-`POST` methods fall through to the reverse proxy untouched.
+
+Not covered: the reverse-proxy wiring itself (`GET /api/formats`, `GET /api/jobs/*`, `/files/*` → the worker) and `static/app.js`. Both are exercised by the [repo root's end-to-end smoke test](../README.md#testing), which drives the real `POST /api/jobs` → poll → download flow through this service against a live worker.

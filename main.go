@@ -87,10 +87,11 @@ func main() {
 // Must stay in sync with the worker's api.jobRequest wire format: Kind is
 // "video" (Height + WithAudio apply) or "audio" (AudioFormat applies).
 type jobRequest struct {
-	FileID string `json:"file_id"`
-	URL    string `json:"url"`
-	Title  string `json:"title,omitempty"`
-	Kind   string `json:"kind"`
+	FileID   string  `json:"file_id"`
+	URL      string  `json:"url"`
+	Title    string  `json:"title,omitempty"`
+	Duration float64 `json:"duration,omitempty"`
+	Kind     string  `json:"kind"`
 
 	Height    int  `json:"height,omitempty"`
 	WithAudio bool `json:"with_audio,omitempty"`
@@ -98,11 +99,18 @@ type jobRequest struct {
 	AudioFormat string `json:"audio_format,omitempty"`
 }
 
+// jobPublisher is the subset of *kafka.Writer that handleCreateJob needs,
+// so tests can exercise the handler's validation/response logic with a fake
+// in-memory publisher instead of a real Kafka broker.
+type jobPublisher interface {
+	WriteMessages(ctx context.Context, msgs ...kafka.Message) error
+}
+
 // handleCreateJob intercepts POST /api/jobs and publishes the request to
 // Kafka instead of proxying it (the worker no longer accepts job submissions
 // over HTTP). Any other method on this path (e.g. GET to list jobs) falls
 // through to the worker's REST API.
-func handleCreateJob(writer *kafka.Writer, proxy http.Handler, log *slog.Logger) http.HandlerFunc {
+func handleCreateJob(writer jobPublisher, proxy http.Handler, log *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			proxy.ServeHTTP(w, r)

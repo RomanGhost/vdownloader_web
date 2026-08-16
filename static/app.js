@@ -8,6 +8,7 @@ const formatsEl = document.getElementById("formats");
 
 let currentURL = "";
 let currentTitle = "";
+let currentDuration = 0;
 let videoHeights = [];
 let audioFormats = [];
 let pollTimer = null;
@@ -115,6 +116,7 @@ form.addEventListener("submit", async (e) => {
   }
 
   currentTitle = data.title || url;
+  currentDuration = data.duration || 0;
   videoHeights = data.video_heights || [];
   audioFormats = data.audio_formats || [];
 
@@ -128,7 +130,7 @@ async function startDownload({ kind, height, withAudio, audioFormat }) {
   formatsEl.hidden = true;
   setStatus("Queuing download…", false);
 
-  const body = { url: currentURL, title: currentTitle, kind };
+  const body = { url: currentURL, title: currentTitle, duration: currentDuration, kind };
   if (kind === "video") {
     body.height = height;
     body.with_audio = withAudio;
