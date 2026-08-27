@@ -10,26 +10,24 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-
-	"github.com/segmentio/kafka-go"
 )
 
 func testLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
-// fakePublisher records every message it's asked to write, or returns a
-// canned error, without touching a real Kafka broker.
+// fakePublisher records every message body it's asked to publish, or returns
+// a canned error, without touching a real broker connection.
 type fakePublisher struct {
-	messages []kafka.Message
+	messages [][]byte
 	err      error
 }
 
-func (f *fakePublisher) WriteMessages(_ context.Context, msgs ...kafka.Message) error {
+func (f *fakePublisher) Publish(_ context.Context, body []byte) error {
 	if f.err != nil {
 		return f.err
 	}
-	f.messages = append(f.messages, msgs...)
+	f.messages = append(f.messages, body)
 	return nil
 }
 
@@ -63,7 +61,7 @@ func TestHandleCreateJobPublishesVideoRequest(t *testing.T) {
 	}
 
 	var got jobRequest
-	if err := json.Unmarshal(pub.messages[0].Value, &got); err != nil {
+	if err := json.Unmarshal(pub.messages[0], &got); err != nil {
 		t.Fatalf("published message is not valid jobRequest JSON: %v", err)
 	}
 	if got.URL != "https://example.com/v" || got.Height != 1080 || !got.WithAudio || got.Duration != 42 {
@@ -92,7 +90,7 @@ func TestHandleCreateJobIgnoresClientSuppliedFileID(t *testing.T) {
 		t.Fatalf("published %d messages, want 1", len(pub.messages))
 	}
 	var got jobRequest
-	json.Unmarshal(pub.messages[0].Value, &got) //nolint:errcheck
+	json.Unmarshal(pub.messages[0], &got) //nolint:errcheck
 	if got.FileID == "client-supplied" {
 		t.Error("client-supplied file_id was used instead of a server-generated one")
 	}
@@ -119,7 +117,7 @@ func TestHandleCreateJobValidation(t *testing.T) {
 				t.Errorf("status = %d, want %d", rec.Code, http.StatusBadRequest)
 			}
 			if len(pub.messages) != 0 {
-				t.Error("invalid request was still published to Kafka")
+				t.Error("invalid request was still published to the broker")
 			}
 		})
 	}

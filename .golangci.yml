@@ -1,0 +1,32 @@
+# golangci-lint configuration (v1 schema).
+# Run:  golangci-lint run ./...
+#
+# If your installed golangci-lint is v2, run `golangci-lint migrate` to
+# convert this file.
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  # `enable` is added on top of the default set
+  # (errcheck, govet, ineffassign, staticcheck, unused).
+  enable:
+    - gofmt
+    - goimports
+    - misspell
+    - unconvert
+    - bodyclose
+    - errorlint
+    - revive
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  exclude-rules:
+    # Tests intentionally ignore many errors (t.Setenv, json.Unmarshal in
+    # assertions, ...); the //nolint markers already cover the prod code.
+    - path: _test\.go
+      linters:
+        - errcheck
+        - bodyclose
