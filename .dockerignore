@@ -1,1 +1,13 @@
+# Keep the build context small. The Dockerfile only needs the Go sources,
+# go.mod/go.sum, and the embedded static/ directory.
 .env
+.env.example
+
+# local build output
+webui
+
+# docs / compose are not needed inside the image
+README.md
+Dockerfile
+.dockerignore
+.gitignore

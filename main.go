@@ -2,8 +2,8 @@
 //
 // GET /api/formats, GET /api/jobs/*, and /files/* are reverse-proxied straight
 // to the worker's REST API. POST /api/jobs is handled locally: the browser
-// can't speak Kafka directly, so this service publishes the job request to
-// the worker's job-requests topic on the browser's behalf and hands back the
+// can't speak AMQP directly, so this service publishes the job request to the
+// "video.jobs" RabbitMQ queue on the browser's behalf and hands back the
 // generated file_id for the static page to poll. See static/app.js.
 package main
 
@@ -19,13 +19,12 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 
 	"github.com/google/uuid"
-	"github.com/segmentio/kafka-go"
 
 	"webui/internal/config"
+	"webui/internal/mq"
 )
 
 //go:embed static
@@ -50,16 +49,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	jobsWriter := &kafka.Writer{
-		Addr:                   kafka.TCP(strings.Split(cfg.KafkaBrokers, ",")...),
-		Topic:                  cfg.KafkaJobsTopic,
-		Balancer:               &kafka.LeastBytes{},
-		AllowAutoTopicCreation: true,
+	pub, err := mq.NewPublisher(cfg.RabbitURL, mq.QueueJobs)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: connect rabbitmq: %v\n", err)
+		os.Exit(1)
 	}
-	defer jobsWriter.Close()
+	defer pub.Close()
 
 	mux := http.NewServeMux()
-	mux.Handle("/api/jobs", handleCreateJob(jobsWriter, proxy, logger))
+	mux.Handle("/api/jobs", handleCreateJob(pub, proxy, logger))
 	mux.Handle("/api/", proxy)
 	mux.Handle("/files/", proxy)
 	mux.Handle("/", http.FileServerFS(staticRoot))
@@ -70,7 +68,7 @@ func main() {
 	defer stop()
 
 	go func() {
-		logger.Info("starting webui", "addr", cfg.HTTPAddr, "worker_url", cfg.WorkerURL, "kafka_jobs_topic", cfg.KafkaJobsTopic)
+		logger.Info("starting webui", "addr", cfg.HTTPAddr, "worker_url", cfg.WorkerURL, "rabbitmq_url", cfg.RabbitURL)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Error("server error", "err", err)
 		}
@@ -99,17 +97,17 @@ type jobRequest struct {
 	AudioFormat string `json:"audio_format,omitempty"`
 }
 
-// jobPublisher is the subset of *kafka.Writer that handleCreateJob needs,
-// so tests can exercise the handler's validation/response logic with a fake
-// in-memory publisher instead of a real Kafka broker.
+// jobPublisher is the subset of *mq.Publisher that handleCreateJob needs, so
+// tests can exercise the handler's validation/response logic with a fake
+// in-memory publisher instead of a real broker connection.
 type jobPublisher interface {
-	WriteMessages(ctx context.Context, msgs ...kafka.Message) error
+	Publish(ctx context.Context, body []byte) error
 }
 
-// handleCreateJob intercepts POST /api/jobs and publishes the request to
-// Kafka instead of proxying it (the worker no longer accepts job submissions
-// over HTTP). Any other method on this path (e.g. GET to list jobs) falls
-// through to the worker's REST API.
+// handleCreateJob intercepts POST /api/jobs and publishes the request to the
+// "video.jobs" queue instead of proxying it (the worker no longer accepts job
+// submissions over HTTP). Any other method on this path (e.g. GET to list
+// jobs) falls through to the worker's REST API.
 func handleCreateJob(writer jobPublisher, proxy http.Handler, log *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -143,10 +141,7 @@ func handleCreateJob(writer jobPublisher, proxy http.Handler, log *slog.Logger) 
 			return
 		}
 
-		if err := writer.WriteMessages(r.Context(), kafka.Message{
-			Key:   []byte(req.FileID),
-			Value: body,
-		}); err != nil {
+		if err := writer.Publish(r.Context(), body); err != nil {
 			log.Error("publish job request", "err", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return

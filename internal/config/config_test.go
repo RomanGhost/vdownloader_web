@@ -3,16 +3,15 @@ package config
 import "testing"
 
 func TestLoadDefaults(t *testing.T) {
-	for _, key := range []string{"WORKER_URL", "HTTP_ADDR", "KAFKA_BROKERS", "KAFKA_JOBS_TOPIC"} {
+	for _, key := range []string{"WORKER_URL", "HTTP_ADDR", "RABBITMQ_URL"} {
 		t.Setenv(key, "")
 	}
 
 	got := Load()
 	want := Config{
-		WorkerURL:      "http://localhost:8080",
-		HTTPAddr:       ":8082",
-		KafkaBrokers:   "localhost:9092",
-		KafkaJobsTopic: "video.jobs",
+		WorkerURL: "http://localhost:8080",
+		HTTPAddr:  ":8082",
+		RabbitURL: "amqp://guest:guest@localhost:5672/",
 	}
 	if got != want {
 		t.Errorf("Load() = %+v, want %+v", got, want)

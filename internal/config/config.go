@@ -19,23 +19,20 @@ type Config struct {
 	// Env: HTTP_ADDR  Default: :8082
 	HTTPAddr string
 
-	// KafkaBrokers is a comma-separated list of Kafka broker addresses.
-	// Env: KAFKA_BROKERS  Default: localhost:9092
-	KafkaBrokers string
-
-	// KafkaJobsTopic is the topic download job requests are published to.
-	// Env: KAFKA_JOBS_TOPIC  Default: video.jobs
-	KafkaJobsTopic string
+	// RabbitURL is the RabbitMQ connection URL. POST /api/jobs publishes the
+	// job request to the "video.jobs" queue (queue name is a constant in
+	// internal/mq).
+	// Env: RABBITMQ_URL  Default: amqp://guest:guest@localhost:5672/
+	RabbitURL string
 }
 
 // Load reads .env (if present) and returns the populated Config.
 func Load() Config {
 	_ = godotenv.Load()
 	return Config{
-		WorkerURL:      getenv("WORKER_URL", "http://localhost:8080"),
-		HTTPAddr:       getenv("HTTP_ADDR", ":8082"),
-		KafkaBrokers:   getenv("KAFKA_BROKERS", "localhost:9092"),
-		KafkaJobsTopic: getenv("KAFKA_JOBS_TOPIC", "video.jobs"),
+		WorkerURL: getenv("WORKER_URL", "http://localhost:8080"),
+		HTTPAddr:  getenv("HTTP_ADDR", ":8082"),
+		RabbitURL: getenv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/"),
 	}
 }
 

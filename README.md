@@ -1,10 +1,10 @@
 # vdownloader_web
 
-Browser front end for [vdownloader_worker](../vdownloader_worker/README.md): a static HTML/CSS/JS page (embedded in the binary via `go:embed`) plus a thin Go bridge, since a browser can't speak Kafka directly.
+Browser front end for [vdownloader_worker](../vdownloader_worker/README.md): a static HTML/CSS/JS page (embedded in the binary via `go:embed`) plus a thin Go bridge, since a browser can't speak AMQP directly.
 
 ## How it works
 
-`main.go` has no business logic of its own beyond one thing: bridging `POST /api/jobs` to Kafka.
+`main.go` has no business logic of its own beyond one thing: bridging `POST /api/jobs` to RabbitMQ.
 
 | Route | Handling |
 |---|---|
@@ -12,7 +12,7 @@ Browser front end for [vdownloader_worker](../vdownloader_worker/README.md): a s
 | `GET /api/formats?url=` | Reverse-proxied straight to the worker |
 | `GET /api/jobs/{file_id}` | Reverse-proxied straight to the worker (client-side polling) |
 | `GET /files/{file_id}` | Reverse-proxied straight to the worker |
-| `POST /api/jobs` | **Not** proxied — handled locally: publishes the job request to the worker's job-requests Kafka topic (the worker no longer accepts job submissions over HTTP), generates `file_id`, returns it as `{"file_id": "..."}` |
+| `POST /api/jobs` | **Not** proxied — handled locally: publishes the job request to the `video.jobs` RabbitMQ queue (the worker no longer accepts job submissions over HTTP), generates `file_id`, returns it as `{"file_id": "..."}` |
 
 See [main.go](main.go) (`handleCreateJob`).
 
@@ -25,7 +25,7 @@ See [main.go](main.go) (`handleCreateJob`).
 4. On a step-2 pick, `POST /api/jobs` with `{url, title, kind: "video"|"audio", height, with_audio}` or `{..., audio_format}`.
 5. Page polls `GET /api/jobs/{file_id}` every 2s until `status` is `ready` (shows a download link to `/files/{file_id}`) or `failed` (shows the error).
 
-There is no server-push here — unlike the Telegram bot, this service does not consume the `video.completed` Kafka topic; the browser just polls.
+There is no server-push here — unlike the Telegram bot, this service does not consume the `video.completed` queue; the browser just polls.
 
 ## Configuration
 
@@ -35,8 +35,9 @@ Env vars, read via `.env` → environment:
 |---|---|---|
 | `WORKER_URL` | `http://localhost:8080` | Worker base URL — target for the reverse proxy |
 | `HTTP_ADDR` | `:8082` | Address this service listens on |
-| `KAFKA_BROKERS` | `localhost:9092` | Comma-separated broker list |
-| `KAFKA_JOBS_TOPIC` | `video.jobs` | Topic `POST /api/jobs` publishes to |
+| `RABBITMQ_URL` | `amqp://guest:guest@localhost:5672/` | RabbitMQ connection URL |
+
+`POST /api/jobs` publishes to the `video.jobs` queue — a fixed constant (`internal/mq`), not configuration.
 
 ## Running
 
@@ -50,15 +51,15 @@ go build -o webui .
 ```bash
 docker build -t vdownloader-web .
 docker run -it -p 8082:8082 \
-  -e WORKER_URL=http://worker:8080 -e KAFKA_BROKERS=kafka:9092 \
+  -e WORKER_URL=http://worker:8080 -e RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/ \
   vdownloader-web
 ```
 
-See the repo root [docker-compose.yml](../docker-compose.yml) to run it alongside the worker and Kafka.
+See the repo root [docker-compose.yml](../docker-compose.yml) to run it alongside the worker and RabbitMQ.
 
 ## Job request wire format
 
-Must stay in sync with the worker's contract, documented in [vdownloader_worker/README.md#kafka-contract](../vdownloader_worker/README.md#kafka-contract). `POST /api/jobs` body:
+Must stay in sync with the worker's contract, documented in [vdownloader_worker/README.md#rabbitmq-contract](../vdownloader_worker/README.md#rabbitmq-contract). `POST /api/jobs` body:
 
 ```json
 {"url": "https://...", "title": "optional", "duration": 635, "kind": "video", "height": 1080, "with_audio": true}
@@ -70,12 +71,16 @@ Must stay in sync with the worker's contract, documented in [vdownloader_worker/
 
 ```
 .
-├── main.go                        # Reverse proxy + POST /api/jobs → Kafka bridge
+├── main.go                        # Reverse proxy + POST /api/jobs → RabbitMQ bridge
 ├── main_test.go
 ├── internal/
-│   └── config/
-│       ├── config.go              # Env var loading
-│       └── config_test.go
+│   ├── config/
+│   │   ├── config.go              # Env var loading
+│   │   └── config_test.go
+│   └── mq/
+│       ├── mq.go                  # Queue names + durable-queue declare helper
+│       ├── publisher.go           # Reconnecting persistent-message publisher
+│       └── consumer.go            # Reconnecting queue consumer (unused here; shared package)
 └── static/                        # Embedded via go:embed
     ├── index.html
     ├── style.css
@@ -88,7 +93,7 @@ Must stay in sync with the worker's contract, documented in [vdownloader_worker/
 go test ./...
 ```
 
-No live worker or Kafka broker needed: `handleCreateJob` takes a `jobPublisher` interface (satisfied by `*kafka.Writer` in `main()`, and by an in-memory fake in tests) specifically so its validation and response logic can be tested without a real broker.
+No live worker or RabbitMQ broker needed: `handleCreateJob` takes a `jobPublisher` interface (satisfied by `*mq.Publisher` in `main()`, and by an in-memory fake in tests) specifically so its validation and response logic can be tested without a real broker.
 
 - `internal/config/config_test.go` — env var defaults/overrides.
 - `main_test.go` — `handleCreateJob`: valid video/audio requests publish the right JSON and return `{"file_id": ...}`; a client-supplied `file_id` is ignored in favor of a server-generated one; missing `url` / invalid `kind` / `kind == "video"` without `height` all return `400` without publishing anything; a publish failure returns `500`; non-`POST` methods fall through to the reverse proxy untouched.
