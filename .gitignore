@@ -1,0 +1,30 @@
+# Secrets — only .env.example is committed.
+.env
+
+# Build output (Dockerfile builds a binary named "webui")
+/webui
+*.exe
+*.test
+*.out
+coverage.*
+
+# Runtime data
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+downloads/
+
+# Local scratch
+gf
+out.txt
+
+# Go
+/vendor/
+
+# Editors / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
