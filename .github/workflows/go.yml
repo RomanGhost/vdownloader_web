@@ -29,7 +29,7 @@ jobs:
   
   docker:
     needs: build
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -48,7 +48,7 @@ jobs:
       - id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}   # ghcr.io/RomanGhost/vdownloader_worker
+          images: ghcr.io/${{ github.repository }}   # ghcr.io/RomanGhost/vdownloader_web
           tags: |
             type=sha,prefix=sha-
             type=raw,value=latest
