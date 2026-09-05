@@ -1,6 +1,6 @@
 # vdownloader_web
 
-Browser front end for [vdownloader_worker](../vdownloader_worker/README.md): a static HTML/CSS/JS page (embedded in the binary via `go:embed`) plus a thin Go bridge, since a browser can't speak AMQP directly.
+Browser front end for [vdownloader_worker](https://github.com/RomanGhost/vdownloader_worker) (a separate repo): a static HTML/CSS/JS page (embedded in the binary via `go:embed`) plus a thin Go bridge, since a browser can't speak AMQP directly.
 
 ## How it works
 
@@ -55,11 +55,11 @@ docker run -it -p 8082:8082 \
   vdownloader-web
 ```
 
-See the repo root [docker-compose.yml](../docker-compose.yml) to run it alongside the worker and RabbitMQ.
+See the [docker-compose.yml in vdownloader_config](https://github.com/RomanGhost/vdownloader_config/blob/main/docker-compose.yml) (a separate repo) to run it alongside the worker and RabbitMQ.
 
 ## Job request wire format
 
-Must stay in sync with the worker's contract, documented in [vdownloader_worker/README.md#rabbitmq-contract](../vdownloader_worker/README.md#rabbitmq-contract). `POST /api/jobs` body:
+Must stay in sync with the worker's contract, documented in [vdownloader_worker's README](https://github.com/RomanGhost/vdownloader_worker/blob/main/README.md#rabbitmq-contract) (a separate repo). `POST /api/jobs` body:
 
 ```json
 {"url": "https://...", "title": "optional", "duration": 635, "kind": "video", "height": 1080, "with_audio": true}
@@ -98,4 +98,4 @@ No live worker or RabbitMQ broker needed: `handleCreateJob` takes a `jobPublishe
 - `internal/config/config_test.go` — env var defaults/overrides.
 - `main_test.go` — `handleCreateJob`: valid video/audio requests publish the right JSON and return `{"file_id": ...}`; a client-supplied `file_id` is ignored in favor of a server-generated one; missing `url` / invalid `kind` / `kind == "video"` without `height` all return `400` without publishing anything; a publish failure returns `500`; non-`POST` methods fall through to the reverse proxy untouched.
 
-Not covered: the reverse-proxy wiring itself (`GET /api/formats`, `GET /api/jobs/*`, `/files/*` → the worker) and `static/app.js`. Both are exercised by the [repo root's end-to-end smoke test](../README.md#testing), which drives the real `POST /api/jobs` → poll → download flow through this service against a live worker.
+Not covered: the reverse-proxy wiring itself (`GET /api/formats`, `GET /api/jobs/*`, `/files/*` → the worker) and `static/app.js`. Both are exercised by the [end-to-end smoke test in vdownloader_config](https://github.com/RomanGhost/vdownloader_config/blob/main/README.md#testing), which drives the real `POST /api/jobs` → poll → download flow through this service against a live worker.
